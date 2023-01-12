@@ -227,6 +227,51 @@ async def atencion(ctx, *, announce=None):
 		embed.set_thumbnail(url=ctx.author.avatar_url)
 		await ctx.send(embed=embed)
 
+#Giveaway
+
+@cbot.command()
+async def givaway(ctx, ammount, mins):
+  message = await ctx.send(f"Quieres pasta? Aqui tienes pasta! Reacciona para ganar {ammount}KC. Tienes {mins} minutos!")
+  emoji = '💰'
+  await message.add_reaction(emoji)
+  await asyncio.sleep(int(mins)*60)
+  message = await ctx.channel.fetch_message(message.id)
+  participantes = [None]
+  for reaction in message.reactions:
+    if reaction.emoji == emoji:
+      async for user in reaction.users():
+        if user.bot == False:
+          participantes.append(user)
+          print(user)
+  await ctx.send("¡¡¡TIEMPO!!! Felicidades a quien haya podido participar.")
+
+
+#Lottery
+@bot.command()
+async def lottery(ctx, ammount, mins, cost = 10):
+  message = await ctx.send(f"Se ha creado una loteria! Reacciona para ganar {ammount}KC. Tienes {mins} minutos! Unirse cuesta {cost}KC pero si ganas no se te restan del premio")
+  emoji = '💰'
+  await message.add_reaction(emoji)
+  await asyncio.sleep(int(mins)*60)
+  message = await ctx.channel.fetch_message(message.id)
+  participantes = [None]
+  for reaction in message.reactions:
+    if reaction.emoji == emoji:
+      async for user in reaction.users():
+        if (user.bot == False) and (KickCoins(user) >= int(cost)):
+          participantes.append(user)
+          await remove_coins(user, cost)
+          print(user)
+  
+  winner = random.choice(participantes)
+  await ctx.send("¡¡¡TIEMPO!!! EL GANADOR ÉS...")
+  await asyncio.sleep(3)
+  if winner != None: 
+    await ctx.send(f"¡¡¡{winner.mention}!!! Se lleva {ammount}KC")
+    await add_coins(winner, int(ammount)+int(cost))
+  else:
+    locations = ["las bahamas", "mordor", "madrid", "un sotano oscuro...", "el Palau de la Generalitat", "su puta casa", "tonto quien lo lea", "tu cama", "Vietnam", "el discord personal de tu ex", "Club Penguin", "Habbo Hotel"]
+    await ctx.send(f"Mala suerte gente, le ha tocado a un desconocido en {random.choice(locations)}")
 ###########sugerencia#########
 @bot.command()
 async def sugerencia(ctx, *, sugerencia=None):
