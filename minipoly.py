@@ -5,7 +5,6 @@ class RealEstateGame:
     Player class to move, purchase Spaces, and pay rent. Communicates with
     Space
     class to set ownership."""
-
     def __init__(self):
         """Initializes the Real Estate game with dictionaries to store
         players and
@@ -25,11 +24,12 @@ class RealEstateGame:
         Receives value of money awarded when passing GO and list of rent
         values."""
         self._spaces["GO"] = Space(None, go_money, None, 0)
-        for rent_value, space_index in zip(rent_values, range(1, len(rent_values) + 1)):
+        for rent_value, space_index in zip(rent_values,
+                                           range(1,
+                                                 len(rent_values) + 1)):
             # for space_index in range(1, len(rent_values) + 1):
             self._spaces[f"Space_{space_index}"] = Space(
-                5 * rent_value, rent_value, None, space_index
-            )
+                5 * rent_value, rent_value, None, space_index)
 
     def create_player(self, player_name: str, money_balance: int):
         """Creates a Player object and adds it to the "players" dictionary.
@@ -138,7 +138,8 @@ class RealEstateGame:
         if new_space_owner is player:
             return
         new_space_rent: int = new_space.get_rent_value()
-        new_space_owner.set_money_balance(player.set_money_balance(-new_space_rent))
+        new_space_owner.set_money_balance(
+            player.set_money_balance(-new_space_rent))
         return
 
     def check_game_over(self):
@@ -170,7 +171,6 @@ class Player:
     pay rent, and set active status. Communicates with Space class to set
     ownership
     and pay rent."""
-
     def __init__(
         self,
         current_space,
@@ -257,7 +257,6 @@ class Space:
     and owner
     attributes. Communicate with RealEstateGame class to set ownership and
     pay rent. Communicates with Player class to set ownership and pay rent."""
-
     def __init__(
         self,
         buy_value,

@@ -1,6 +1,7 @@
 import os
 import random
 import config
+import asyncio
 #import wordle
 import SQLmanager
 from minipoly import *
@@ -8,6 +9,9 @@ from datetime import date
 import discord
 from keep_alive import keep_alive
 from discord.ext import commands
+#Custom imports
+from economy import add_ppl, add_coins, remove_coins, KickCoins, leaderboard, update_leaderboard
+from cards import deck as deckf, add_pile, draw, pile, value
 
 #####Zona para la classe del laberinto#####
 from builder import make_maze
@@ -78,6 +82,130 @@ bot = commands.Bot(command_prefix = "a ", intents=intents, case_insensitive=True
 token = os.environ["DISCORD_BOT_SECRET"]
 
 bot.author_id = 1041801498608275556  # Change to your discord id!!!
+#####################################################CK
+#balance
+@bot.command()
+async def balance(ctx, user: discord.Member = None):
+	if user == None:
+		user = ctx.author
+
+	embed = discord.Embed(title="COINS",
+	                      color=0x00ff33,
+	                      timestamp=datetime.datetime.utcnow())
+	embed.set_thumbnail(url=user.avatar_url)
+	embed.add_field(name="BALANCE --------->", value=":3", inline=True)
+	embed.add_field(name=KickCoins(user), value="uwu", inline=True)
+	embed.set_footer(text=user)
+	await ctx.send(embed=embed)
+
+#pay
+@bot.command()
+async def pay(ctx, ammount, user: discord.Member):
+  await add_coins(user, ammount)
+  await ctx.send(f"{ammount}KC añadidos a {user.mention}")
+
+#tax
+@bot.command()
+async def tax(ctx, ammount, user: discord.Member):
+  if ammount == "all":
+    ammount = KickCoins(user)
+  
+  await remove_coins(user, ammount)
+  await ctx.send(f"{ammount}KC restados a {user.mention}")
+
+
+#fuck
+@bot.command()
+async def fuck(ctx, user: discord.Member):
+  if KickCoins(ctx.author) >= 500:
+    try:
+      await user.kick()
+      await remove_coins(ctx.author, 500)
+      await ctx.send(
+          f"{user.name} ha sido kickeado. Se te han restado 500 KickCoins"
+      )
+    except discord.Forbidden:
+      await add_coins(ctx.author, reward)
+  else:
+    await ctx.send("No tienes suficientes KickCoins. Necessitas 500")
+
+#gamble
+@bot.command()
+async def gamble(ctx, ammount):
+  '''Apuesta tu dinero para ganar (o perder ;) )la misma cantidad '''
+  if ammount == "all":
+    ammount = KickCoins(ctx.author)
+  elif ammount == "half":
+    ammount = int(KickCoins(ctx.author)/2)
+  else:
+	  ammount = int(ammount)
+  if ammount <= 0:
+	  await ctx.send("Buen intento maquina")
+	  return
+  if KickCoins(ctx.author) >= ammount:
+    num = random.randint(1, 2)
+    await ctx.send(f"{ctx.author.mention} Acabas de apostar {ammount} KC...")
+    await asyncio.sleep(3)
+    if num == 1:
+    	await ctx.send(f"¡¡¡ {ctx.author.mention} Has ganado {ammount}KC!!!")
+    	await add_coins(ctx.author, ammount)
+    elif num == 2:
+    	await ctx.send(f"{ctx.author.mention}Has perdido {ammount}KC :(. F")
+    	await remove_coins(ctx.author, ammount)
+  else:
+    await ctx.send(
+		    f"{ctx.author.mention} No tienes tantos KC!! te faltan {ammount - KickCoins(ctx.author)}"
+		)
+
+#Transfer
+@bot.command()
+async def transfer(ctx, coins, user: discord.Member):
+	coins = int(coins)
+	if coins <= 0:
+		await ctx.send("Nope")
+		return  
+
+	if KickCoins(ctx.author) >= coins:
+		await add_coins(user, coins)
+		await remove_coins(ctx.author, coins)
+		await ctx.send("Done!")
+	else:
+		ctx.send(
+		    f"No tienes KickCoins suficientes. Te faltan {coins - KickCoins(user)}"
+		)
+
+#rank
+@bot.command()
+async def rank(ctx, arg=None):
+	embed = discord.Embed(title="LEADERBOARD",
+	                      description="the top 10 most mone pep",
+	                      color=0xfbff00,
+	                      timestamp=datetime.datetime.utcnow())
+	if arg == "fekas":
+	  fekas = True
+	else:
+		fekas = False
+	ricos = [
+	    810735914782818354, 823886106725711922, 815423482966835220,
+	    272021299772129281
+	]
+	i = 0
+	for user in leaderboard(ctx.guild):
+		if not fekas:
+			embed.add_field(name=f"{i+1}. {user.name}",
+			                value=f"BALANCE = {KickCoins(user)}",
+			                inline=False)
+			i += 1
+		else:
+			if not user.id in ricos:        
+				embed.add_field(name=f"{i+1}. {user.name}",
+				                value=f"BALANCE = {KickCoins(user)}",
+				                inline=False)
+				i += 1
+		if i == 10:
+			break
+
+	await ctx.send(embed=embed)
 
 
 ####################INICIO DE SEGUNDA PARTE PARA EL LABERINTO
@@ -229,7 +357,7 @@ async def atencion(ctx, *, announce=None):
 
 #Giveaway
 
-@cbot.command()
+@bot.command()
 async def givaway(ctx, ammount, mins):
   message = await ctx.send(f"Quieres pasta? Aqui tienes pasta! Reacciona para ganar {ammount}KC. Tienes {mins} minutos!")
   emoji = '💰'
