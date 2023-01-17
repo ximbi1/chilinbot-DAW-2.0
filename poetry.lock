@@ -179,6 +179,14 @@ optional = false
 python-versions = ">=3.8"
 
 [[package]]
+name = "paginate"
+version = "0.5.6"
+description = "Divides large result sets into pages for easier browsing"
+category = "main"
+optional = false
+python-versions = "*"
+
+[[package]]
 name = "pandas"
 version = "1.5.2"
 description = "Powerful data structures for data analysis, time series, and statistics"
@@ -274,7 +282,7 @@ testing = ["pytest (>=6)", "pytest-checkdocs (>=2.4)", "pytest-flake8", "flake8 
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "2a392887605e42b8afca4cd6db071b0e8b3be84f5c329f34763cd3c6fb97fe19"
+content-hash = "a122942d2af390b9563e374226291602e78ad21f6494a231d802351595d950c8"
 
 [metadata.files]
 aiohttp = []
@@ -293,6 +301,7 @@ jinja2 = []
 markupsafe = []
 multidict = []
 numpy = []
+paginate = []
 pandas = []
 python-dateutil = []
 pytz = []

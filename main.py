@@ -1,9 +1,15 @@
 import os
+import time
 import random
+import paginate
+import requests
+import json
 import config
 import asyncio
+import datetime
 #import wordle
 import SQLmanager
+
 from minipoly import *
 from datetime import date
 import discord
@@ -13,68 +19,6 @@ from discord.ext import commands
 from economy import add_ppl, add_coins, remove_coins, KickCoins, leaderboard, update_leaderboard
 from cards import deck as deckf, add_pile, draw, pile, value
 
-#####Zona para la classe del laberinto#####
-from builder import make_maze
-import random
-import math
-
-class Map:
-    def rand(self):
-        direction = random.randint(0, 3)
-        if direction == 0:
-            x = random.randint(1, len(self.map) - 2)
-            y = 0
-        elif direction == 1:
-            x = 0
-            y = random.randint(1, len(self.map[0]) - 2)
-        elif direction == 2:
-            x = random.randint(1, len(self.map) - 2)
-            y = len(self.map[0]) - 1
-        else:
-            x = len(self.map) - 1
-            y = random.randint(1, len(self.map[0]) - 2)
-
-        if (x == 0 and self.map[x+1][y] != " ") or (y == 0 and self.map[x][y+1] != " ") or (x == len(self.map) - 1 and self.map[x-1][y] != " ") or (y == len(self.map[0]) - 1 and self.map[x][y-1]) :
-            return self.rand()
-
-        return [x,y]
-
-    def __init__(self, map):
-        self.map = map
-        self.player = [0, 0]
-        self.won = False
-
-
-        x,y = self.rand()
-        self.player = [x, y]
-        self.map[x] = self.map[x][:y] + "🐒" + self.map[x][y+1:]
-
-        while x == self.player[0] and y == self.player[1] or self.map[x][y] == " ":
-            x, y = self.rand()
-
-        self.map[x] = self.map[x][:y] + "🏁" + self.map[x][y+1:]
-
-
-    def __str__(self):
-        return "\n".join(self.map)
-
-    def move(self,x,y):
-        try:
-            if self.map[x][y] != " "  and self.map[x][y] != "🏁":
-                return
-        except IndexError:
-            return
-
-        if self.map[x][y] == "🏁":
-            self.won = True
-
-        self.map[self.player[0]] = self.map[self.player[0]].replace("🐒", " ")
-        self.player = [x, y]
-        self.map[x] = self.map[x][:y] + "🐒" + self.map[x][y+1:]
-
-
-games = {}
-##################FINAL PRIMERA PARTE##############
 
 #######################prefijo para llamar al bot############
 intents = discord.Intents.all()
@@ -82,6 +26,48 @@ bot = commands.Bot(command_prefix = "a ", intents=intents, case_insensitive=True
 token = os.environ["DISCORD_BOT_SECRET"]
 
 bot.author_id = 1041801498608275556  # Change to your discord id!!!
+
+# Crear una función para generar un sudoku aleatorio
+def generate_sudoku():
+    sudoku = [[0 for _ in range(9)] for _ in range(9)]
+    for row in range(9):
+        for col in range(9):
+            sudoku[row][col] = random.randint(1,9)
+    return sudoku
+
+# Crear una función para mostrar el sudoku como una tabla
+def show_sudoku(sudoku):
+    for row in sudoku:
+        for col in row:
+            print(col, end=' ')
+        print()
+
+# Crear un comando para generar y mostrar un sudoku
+@bot.command()
+async def sudoku(ctx):
+    sudoku = generate_sudoku()
+    sudoku_str = ""
+    for row in sudoku:
+        for col in row:
+            sudoku_str += str(col) + " "
+        sudoku_str += "\n"
+    await ctx.send("Aqui esta el sudoku:\n" + sudoku_str)
+
+# Crear un comando para permitir al usuario completar el sudoku
+@bot.command()
+async def completar(ctx, row: int, col: int, num: int):
+    if sudoku[row][col] == 0:
+        sudoku[row][col] = num
+        sudoku_str = ""
+        for row in sudoku:
+            for col in row:
+                sudoku_str += str(col) + " "
+            sudoku_str += "\n"
+        await ctx.send("Sudoku actualizado:\n" + sudoku_str)
+    else:
+        await ctx.send("La posición seleccionada ya tiene un valor.")
+
+
 #####################################################CK
 #balance
 @bot.command()
@@ -155,8 +141,7 @@ async def gamble(ctx, ammount):
   else:
     await ctx.send(
 		    f"{ctx.author.mention} No tienes tantos KC!! te faltan {ammount - KickCoins(ctx.author)}"
-		)
-
+		)    
 #Transfer
 @bot.command()
 async def transfer(ctx, coins, user: discord.Member):
@@ -208,83 +193,196 @@ async def rank(ctx, arg=None):
 	await ctx.send(embed=embed)
 
 
-####################INICIO DE SEGUNDA PARTE PARA EL LABERINTO
 
-def draw(game, status):
-    blank = str(discord.utils.get(bot.emojis, name="v_"))
-    message = ""
-    for i in range(game.player[0] - 5, game.player[0] + 5):
-        for j in range(game.player[1] - 5, game.player[1] + 5):
-            if i < 0 or j < 0 or i >= len(game.map) or j >= len(game.map[i]):
-                message += blank
-                continue
+maze = [
+    ["#", "#", "#", "#", "#", "#", "#", "#", "#", "#"],
+    ["#", ".", ".", ".", "#", ".", ".", ".", ".", "#"],
+    ["#", ".", "#", ".", "#", ".", "#", "#", ".", "#"],
+    ["#", ".", "#", ".", ".", ".", "#", ".", ".", "#"],
+    ["#", ".", "#", "#", "#", ".", "#", ".", ".", "#"],
+    ["#", ".", ".", ".", ".", ".", ".", ".", ".", "#"],
+    ["#", "#", "#", "#", "#", "#", "#", "#", ".", "#"],
+    ["#", ".", ".", ".", ".", ".", ".", ".", ".", "#"],
+    ["#", ".", "#", "#", "#", "#", "#", "#", "#", "#"],
+    ["#", ".", ".", ".", ".", ".", ".", ".", ".", "#"],
+    ["#", "#", "#", "#", "#", "#", "#", "#", "#", "#"]
+]
 
-            message += game.map[i][j] if game.map[i][j] != " " else blank
+def __init__(self, bot):
+        self.bot = bot
+        self.pets = {}
+  
+player_position = [1, 1]
+###########################
+##########NO FUNCIONSAAAAAAA
+@bot.command()
+async def crear_mascota(self, ctx):
+        # Crea una nueva mascota para el usuario
+  author = ctx.message.author
+  pet = {"nombre": "", "hambre": 50, "sueño": 50, "diversión": 50, "salud": 50}
+  self.pets[author.id] = pet
+  await self.bot.say("Mascota creada! Usa el comando `nombre_mascota` para darle un nombre.")
 
-        message += "\n"
+@bot.command()
+async def nombre_mascota(self, ctx, nombre):
+        # Asigna un nombre a la mascota del usuario
+  author = ctx.message.author
+  if author.id in self.pets:
+    self.pets[author.id]["nombre"] = nombre
+    await self.bot.say("Nombre asignado a tu mascota.")
+  else:
+    await self.bot.say("No tienes una mascota. Usa el comando `crear_mascota` para crear una.")
 
-    return message + status
+@bot.command()
+async def ver_mascota(self, ctx):
+        # Muestra el estado actual de la mascota del usuario
+  author = ctx.message.author
+  if author.id in self.pets:
+    pet = self.pets[author.id]
+    response = "Nombre: {}\nHambre: {}\nSueño: {}\nDiversión: {}\nSalud: {}".format(pet["nombre"], pet["hambre"], pet["sueño"], pet["diversión"], pet["salud"])
+    await self.bot.say(response)
+  else:
+    await self.bot.say("No tienes una mascota. Usa el comando `crear_mascota` para crear una.")
 
-@bot.command(name = "laberinto")
-async def laberinto(ctx, size = "3x3", color = "white"):
-    b = "⬜" if color.lower() == "white" else "⬛"
-    w,h = size.lower().split("x")
-    if int(w) < 3 or int(h) < 3 or int(w) > 35 or int(h) > 35:
-        await ctx.send("Tamaño no valido: rango(3x3 - 35x35)")
-        return
+@bot.command()
+async def alimentar_mascota(self, ctx):
+        # Aumenta el nivel de hambre de la mascota del usuario
+  author = ctx.message.author
+  if author.id in self.pets:
+    pet = self.pets[author.id]
+    pet["hambre"] = min(100, pet["hambre"] + random.randint(10, 20))
+    await self.bot.say("Alimentaste a tu mascota.")
+  else:
+    await self.bot.say("No tienes una mascota. Usa el comando `crear_mascota` para crear una.")
 
-    try:
-        if games.get(ctx.author.id) is not None:
-            await games[ctx.author.id][1].delete()
-    except Exception:
-        pass
+@bot.command()
+async def dormir_mascota(self, ctx):
+# Aumenta el nivel de sueño de la mascota del usuario
+  author = ctx.message.author
+  if author.id in self.pets:
+    pet = self.pets[author.id]
+    pet["sueño"] = min(100, pet["sueño"] + random.randint(10, 20))
+    await self.bot.say("Tu mascota se durmió.")
+  else:
+    await self.bot.say("No tienes una mascota. Usa el comando crear_mascota para crear una.")
+@bot.command()
+async def jugar_mascota(self, ctx):
+    # Aumenta el nivel de diversión de la mascota del usuario
+  author = ctx.message.author
+  if author.id in self.pets:
+    pet = self.pets[author.id]
+    pet["diversión"] = min(100, pet["diversión"] + random.randint(10, 20))
+    await self.bot.say("Tu mascota está jugando.")
+  else:
+    await self.bot.say("No tienes una mascota. Usa el comando `crear_mascota` para crear una.")
 
-    game = Map(make_maze(int(w),int(h)).replace("+", b).replace("-", b).replace("|", b).split("\n")[:-2])
-    message = draw(game, f"\nPropietario: {ctx.author.name}\nEstado: JUGANDO")
-    msg = await ctx.send(message)
+@bot.command()
+async def curar_mascota(self, ctx):
+    # Aumenta el nivel de salud de la mascota del usuario
+  author = ctx.message.author
+  if author.id in self.pets:
+    pet = self.pets[author.id]
+    pet["salud"] = min(100, pet["salud"] + random.randint(10, 20))
+    await self.bot.say("Tu mascota está siendo curada.")
+  else:
+    await self.bot.say("No tienes una mascota. Usa el comando `crear_mascota` para crear una.")
+#########FINS AQUI NO FUNCIONA######################
+diccionario = {}
+#################################
+#######para suicidarseeeee##############
+@bot.command()
+async def morir(ctx):
+    '''para suicidarse'''
+    suicideembed = discord.Embed(title=f'{ctx.author} se ha suicidado',
+                                 description="Probablemente este triste",
+                                 color=0x000000)
+    suicideembed.set_image(
+        url='https://media1.giphy.com/media/c6DIpCp1922KQ/giphy.gif')
+    suicideembed.set_footer(text='*No hagan esto en sus casas xd*')
+    suicideembed2 = discord.Embed(title=f'{ctx.author} se ha suicidado',
+                                  description="Probablemente este triste",
+                                  color=0x000000)
+    suicideembed2.set_image(
+        url=
+        'https://media1.tenor.com/images/041dddf7d24b9ba3d591e0bed2ce38c7/tenor.gif?itemid=4524247'
+    )
+    suicideembed2.set_footer(text='*No hagan esto en sus casas xd*')
+    suicideembed3 = discord.Embed(title=f'{ctx.author} se ha suicidado',
+                                  description="Probablemente este triste",
+                                  color=0x000000)
+    suicideembed3.set_image(
+        url='https://i.makeagif.com/media/9-14-2015/vyNnjt.gif')
+    suicideembed3.set_footer(text='*No hagan esto en sus casas xd*')
+    suicideembed4 = discord.Embed(title=f'{ctx.author} se ha suicidado',
+                                  description="Probablemente este triste",
+                                  color=0x000000)
+    suicideembed4.set_image(
+        url='https://thumbs.gfycat.com/SnarlingTameEquine-max-1mb.gif')
+    suicideembed4.set_footer(text='*No hagan esto en sus casas xd*')
+    suicideembed6 = discord.Embed(title=f'{ctx.author} se ha suicidado',
+                                  description="Probablemente este triste",
+                                  color=0x000000)
+    suicideembed6.set_image(
+        url='https://tenor.com/view/epic-meme-kermit-suicide-gif-20626092')
+    suicideembed6.set_footer(text='*No hagan esto en sus casas xd*')
+    suicideembed5 = discord.Embed(title=f'{ctx.author} se ha suicidado',
+                                  description="Probablemente este triste",
+                                  color=0x000000)
+    suicideembed5.set_image(
+        url='https://media2.giphy.com/media/13kJc5CTOnqdQk/giphy.gif')
+    suicideembed5.set_footer(text='*No hagan esto en sus casas xd*')
+    suicidio = [
+        suicideembed, suicideembed2, suicideembed3, suicideembed4,
+        suicideembed5, suicideembed6
+    ]
+    await ctx.send(embed=random.choice(suicidio))
 
-    games[ctx.author.id] = (game, msg)
 
-    await msg.add_reaction("⬅️")
-    await msg.add_reaction("⬆️")
-    await msg.add_reaction("⬇️")
-    await msg.add_reaction("➡️")
-
-    await msg.add_reaction("🛑")
-
-@bot.event
-async def on_reaction_add(reaction, user):
-    try:
-        game = games[user.id][0]
-    except KeyError:
-        return
-
-    if str(reaction) == "⬅️":
-        game.move(game.player[0], game.player[1] - 1)
-
-    if str(reaction) == "⬆️":
-        game.move(game.player[0] - 1, game.player[1])
-
-    if str(reaction) == "⬇️":
-        game.move(game.player[0] + 1, game.player[1])
-
-    if str(reaction) == "➡️":
-        game.move(game.player[0], game.player[1] + 1)
-
-    await games[user.id][1].remove_reaction(str(reaction), user)
-    if str(reaction) == "🛑":
-        await games[user.id][1].delete()
-        del games[user.id]
-        return
-
-    if game.won:
-        await games[user.id][1].edit(content=draw(game, f"\nPropietario: {user.name}\nEstado: Ganaste"))
-        del games[user.id]
+##############################################
+#####para tomar chupitoooosss########
+@bot.command()
+async def fumeteo(ctx):
+    '''aver quantos calos aguantas campeeon'''
+    salve = random.randint(1, 15)
+    boss = [
+        f'{ctx.author} se mantiene en pie despues de {salve} calos!',
+        f'{ctx.author} empezo a ir ciego despues de {salve} calazos!'
+    ]
+    poo = random.choice(boss)
+    deshqiperine = [
+        'https://media.tenor.com/lWYKkXN2tasAAAAM/smoke-cigarette.gif',
+        'https://media.tenor.com/zoglollWU_8AAAAM/smoke-cigarette.gif',
+        'https://media.tenor.com/KCDaAubmS4YAAAAM/smoke-shrug.gif'
+    ]
+    if salve > 7:
+        embed = discord.Embed(
+            title=
+            f'{ctx.author} como se nota que te gusta la hierbita eeh jajajaja!',
+            description=
+            f'{ctx.author.mention} sa fumao unos petas como un misil y sigue en pie!',
+            color=0x000000)
+        embed.add_field(name='Epico,este es immortal seguro',
+                        value=poo,
+                        inline=False)
+        embed.set_image(url=random.choice(deshqiperine))
+        embed.set_footer(text='en la real life es pegriloso xd')
     else:
-        await games[user.id][1].edit(content=draw(game, f"\nPropietario: {user.name}\nEstado: JUGANDO"))
+        embed = discord.Embed(
+            title=f'{ctx.author} te falta practica...que la palmas!',
+            description=
+            f'{ctx.author.mention} intento ser un pro...y el blancazo se llevo!JAJJAJA',
+            color=0x000000)
+        embed.add_field(
+            name=f'{ctx.author} le dio blanca despues de {salve} calazos!',
+            value='que lastima...',
+            inline=False)
+        embed.set_image(url=random.choice(deshqiperine))
+        embed.set_footer(text='en la rial life es pegriloso xd')
+    await ctx.send(embed=embed)
 
-########FINAL DEL LABERINTO########################
+    
 
+##################################################
 @bot.event 
 async def on_ready():  # When the bot is ready
     print("I'm in")
@@ -301,6 +399,7 @@ async def on_ready():
 #on sessage######################
 xd = ["uwu", "f", "xd", "nice", 'a', "maricon"]
 blacklist = []
+levels = {}
 @bot.event
 async def on_message(message):
   author = message.author
@@ -320,13 +419,123 @@ async def on_message(message):
         await canal.send(f"{int(content) + 1}")
       except ValueError:
         await canal.send("xd")
-  
+        
+  if message.content.startswith("!agregar"):#agregar al diccionario
+        palabra, significado = message.content[8:].split(":")
+        diccionario[palabra] = significado
+        await message.channel.send(f"Palabra '{palabra}' agregada al diccionario con significado '{significado}'")
+    
+  elif message.content.startswith("!buscar"):#para buscar palabra
+        palabra_buscada = message.content[7:]
+        if palabra_buscada in diccionario:
+            significado = diccionario[palabra_buscada]
+            await message.channel.send(f"La palabra '{palabra_buscada}' tiene el significado: '{significado}'")
+        else:
+            await message.channel.send(f"La palabra '{palabra_buscada}' no se encuentra en el diccionario.")
+
+  if message.content.startswith("!reflejos"):#para juego de reflejos
+        await message.channel.send("¡Empezando juego de reflejos! Responde listo rápido para ganar.")
+        start_time = time.time()
+        def check(m):
+            return m.content.lower() == "listo" and m.channel == message.channel
+        try:
+            ready_message = await bot.wait_for("message", check=check, timeout=5.0)
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            await message.channel.send("¡Listo! Tu tiempo de reacción fue de {:.2f} segundos.".format(elapsed_time))
+        except asyncio.TimeoutError:
+            await message.channel.send("¡Tiempo fuera! No fuiste lo suficientemente rápido.")
   if message.content == "AITOR":
     await message.channel.send("TERMINATOR!")
-
-
-
+  if message.content.startswith("!laberinto"):
+        await message.channel.send("Este es tu laberinto:")
+        for row in maze:
+            row_string = ""
+            for cell in row:
+                if player_position[0] == row and player_position[1] == cell:
+                    row_string += "@"
+                else:
+                    row_string += cell
+            await message.channel.send(row_string)
+        await message.channel.send("Utiliza las flechas para moverte")
+  elif message.content.startswith("!arriba"):
+        if player_position[0] > 0:
+            if maze[player_position[0] - 1][player_position[1]] != "#":
+                player_position[0] -= 1
+                await message.channel.send("Te has movido hacia arriba")
+            else:
+                await message.channel.send("No puedes moverte a esa dirección")
+        else:
+            await message.channel.send("No puedes moverte más arriba")
+  elif message.content.startswith("!abajo"):
+        if player_position[0] < len(maze) - 1:
+            if maze[player_position[0] + 1][player_position[1]] != "#":
+                player_position[0] += 1
+                await message.channel.send("Te has movido hacia abajo")
+            else:
+                await message.channel.send("No puedes moverte a esa dirección")
+        else:
+            await message.channel.send("No puedes moverte más abajo")
+  elif message.content.startswith("!izquierda"):
+        if player_position[1] > 0:
+            if maze[player_position[0]][player_position[1] - 1] != "#":
+                player_position[1] -= 1
+                await message.channel.send("Te has movido hacia la izquierda")
+            else:
+                await message.channel.send("No puedes moverte a esa dirección")
+        else:
+            await message.channel.send("No puedes moverte más a la izquierda")
+  elif message.content.startswith("!derecha"):
+        if player_position[1] < len(maze[0]) - 1:
+            if maze[player_position[0]][player_position[1] + 1] != "#":
+                player_position[1] += 1
+                await message.channel.send("Te has movido hacia la derecha")
+            else:
+                await message.channel.send("No puedes moverte a esa dirección")
+        else:
+            await message.channel.send("No puedes moverte más a la derecha")
+  if message.author.bot:
+        return
+  if message.content.startswith('!level'):
+        return
+  if message.author.id not in levels:
+    levels[message.author.id] = {"name": message.author.name, "level": 1, "messages": 1}
+  else:
+    levels[message.author.id]["messages"] += 1
+    if levels[message.author.id]["messages"] % 10 == 0:
+        levels[message.author.id]["level"] += 1
+        await message.channel.send(f"Felicidades {message.author.mention}, has subido al nivel {levels[message.author.id]['level']}!")
+  with open('levels.json', 'w') as f:
+    json.dump(levels, f)
   await bot.process_commands(message)
+
+    
+@bot.command()
+#PARA MOSTRARR QUE NIVEL ERES
+async def minivel(ctx):
+  def cargar_niveles():
+    try:
+      with open('levels.json', 'r') as file:
+          levels = json.load(file)
+    except:
+      levels = {}
+    
+  if ctx.author.id in levels:
+    await ctx.send(f"{ctx.author.mention}, tu nivel actual es {levels[ctx.author.id]['level']}.")
+  else:
+    await ctx.send(f"{ctx.author.mention}, no tienes ningun nivel.")
+#PARA MOSTRAR EL RANGO DE NIVELES
+@bot.command()
+async def rankingn(ctx):
+    sorted_levels = sorted(levels.items(), key=lambda x: x[1]['level'], reverse=True)
+    ranking = ""
+    for i, (user_id, user_data) in enumerate(sorted_levels):
+        ranking += f"{i+1}. {user_data['name']} - Nivel {user_data['level']}\n"
+    await ctx.send(f"**Ranking de niveles:**\n{rankingn}")
+
+
+
+
 
   #Clear#################################################
 @bot.command(
@@ -343,6 +552,207 @@ async def mvacio(ctx):
     await ctx.delete_message(ctx.message)
 #salta error pero hace su funcionamiento xd
 #######################anunciamiento#########################
+@bot.command()
+async def pesca(ctx):
+    fish_list = ["sardina", "bacalao", "atún", "salmón", "trucha","merluza","gamba"]
+    catch = random.choice(fish_list)
+    await ctx.send(f'¡Has atrapado un {catch}!')
+######para pescarrrr pero no me lo detectaaaaaaa
+@bot.command(description="de pesca chavaless")
+async def pescar(ctx):
+    '''nos vamos de pesca'''
+    num = random.randint(1, 100)
+    special = 0
+    #para poner mas dificultad peronerño en 95
+    if num < 75:
+        _catch = await catch()
+    else:
+        _catch = await special_catch()
+        special = 1
+    e = discord.Embed(title="A Pescar!",
+                      description="Te fuiste a pescar!",
+                      colour=0xf54242)
+    e.set_thumbnail(url="https://i.imgur.com/3Q3VDp9.jpg")
+    msg = await ctx.send(embed=e)
+    await asyncio.sleep(3)
+    e = discord.Embed(title="Pescando",
+                      description="Algo ha picado!",
+                      colour=0xd4f542)
+    e.set_thumbnail(url="https://i.imgur.com/Y3mpQhm.jpg")
+    await msg.edit(embed=e)
+    await asyncio.sleep(3)
+    e = discord.Embed(title="Pescando",
+                      description=f"Has conseguido {_catch[0]}!",
+                      colour=0x919191)
+    e.set_thumbnail(url="https://i.imgur.com/59TKpfE.jpg")
+    if special == 0:
+        basePrice = _catch[2]
+        minWeight = _catch[3]
+        maxWeight = _catch[4]
+        goldWeight = _catch[5]
+        weight = round(random.uniform(minWeight, maxWeight), 3)
+        # PRECIO
+        price = 0
+        a = ""
+        if weight >= goldWeight:
+            price = round(basePrice + ((basePrice / 50) * weight * 3), 2)
+            a = "\nEste pez es extraordinariamente largo!"
+        else:
+            price = round(basePrice + ((basePrice / 100) * weight), 2)
+        if _catch[0] == "Nada":
+            e.add_field(name=_catch[0], value="Has perdido el tiempo!")
+            e.set_thumbnail(url="https://i.imgur.com/C6rQmPZ.gif")
+        else:
+            e.add_field(name=_catch[0],
+                        value=f"**Peso**: `{weight}kg`\n" +
+                        f"**Valor**: `{price}$ `" + a)
+    else:
+        price = _catch[2]
+        description = _catch[3]
+        icon = _catch[4]
+        e.set_thumbnail(
+            url="https://live.staticflickr.com/22/25807800_4f776527bb_b.jpg")
+        e = discord.Embed(
+            title="Pescando",
+            description=f"**Item Especial! Has conseguido {_catch[0]}!!!**",
+            colour=0xcc00ff)
+        e.add_field(name=icon + " " + _catch[0],
+                    value=f"**Descripcion**: `{description}`\n" +
+                    f"**Valor**: `{price}$`")
+
+    await msg.edit(embed=e)
+
+
+fishes = (
+    # 0Name, 1Weight (Chance), 2Base Price, 3minWeight, 4maxWeight, 5goldWeight
+    ("Nada", 30, 0, 0, 0, 1),
+    ("sardina", 10, 10, 1, 22.4, 16),
+    ("Pececillo", 17, 5, 0.3, 4, 25),
+    ("Trucha", 10, 12, 8, 48, 35),
+    ("bacalao", 10, 10, 3, 212, 180))
+special = (
+    # Name, Weight, Price, Description, Icon
+    ("Tu gracia", 1, 6969, "Muy raro de encontrar", ":monkey:"),
+    ("Bota", 4, 3, "Vieja bota usada ", ":boot:"),
+    ("Prostituta", 2, 200, "Dios te escucha.", ":dancer:"),
+    ("Dildo", 3, 23, "humedo y usado (por el agua xd)", ":baby_bottle:"),
+    ("Skateboard", 3, 200, "Muy raro y dificil de encontrar", ":skateboard:"),
+    ("Invitacion a patinar", 0.0001, 99999, "%skrt%", ":skateboard:"),
+    ("Mierda de perro", 6, 1, "Huele a mierda por aqui.", ":poop:"),
+    ("Tu madre", 0.005, 2, "Es gorda pero no vale la pena.", ":cap:"))
+
+
+async def catch():
+
+    pr = []
+    for i in range(0, len(fishes)):
+        pr.append(fishes[i][1])
+    pr = round_to_100_percent(pr)
+    return fishes[np.random.choice(len(fishes), p=pr)]
+
+
+async def special_catch():
+    pr = []
+    for i in range(0, len(special)):
+        pr.append(special[i][1])
+    pr = round_to_100_percent(pr)
+    return special[np.random.choice(len(special), p=pr)]
+
+
+def round_to_100_percent(number_set, digit_after_decimal=2):
+    unround_numbers = [
+        x / float(sum(number_set)) * 100 * 10**digit_after_decimal
+        for x in number_set
+    ]
+    decimal_part_with_index = sorted(
+        [(index, unround_numbers[index] % 1)
+         for index in range(len(unround_numbers))],
+        key=lambda y: y[1],
+        reverse=True)
+    remainder = 100 * 10**digit_after_decimal - sum(
+        [int(x) for x in unround_numbers])
+    index = 0
+    while remainder > 0:
+        unround_numbers[decimal_part_with_index[index][0]] += 1
+        remainder -= 1
+        index = (index + 1) % len(number_set)
+    return [(int(x) / float(10**digit_after_decimal)) / 100
+            for x in unround_numbers]
+########################preuab y verdas#################
+@bot.command(help="prueva o verdad")
+async def pv(ctx):
+    '''para hacer prueva o verdad'''
+    truth_items = [
+        'Si pudieras ser invisible,cual es la primera cosa que harias?',
+        'Si te dieran tres deseos cuales serian?',
+        'Cual es el maximo de dias que has podido pasar sin ducharte?',
+        'Cual es el animal que crees que te pareces mas?',
+        'Dime uno de tus mayores secretos', 'Has robado alguna vez?',
+        'Quien es tu crush famoso?', ''
+    ]
+    dare_items = [
+        'Comete unos yatekomo crudos.',
+        ' Baila sin musica durante 20 segundos.',
+        'Deja que alguien que escojas tenga el privilegio de decidir un mensaje que deberas mandar a alaguien que el decida.',
+        ' Deja que una persona te dibuje en la cara con un boli.',
+        'Intenta hacer un truco de magia.',
+        'Rebientate dos huevos en la cabeza.',
+        'Grita por la ventana :no he sido yo ha sido el.',
+        ' Dile a tu madre que necesitas mariguana para aliviar las penas.'
+    ]
+
+    embed = discord.Embed(
+        title="Prueva o Verdad!",
+        description="Porfavor escribe v para verdad y p para prueba",
+        color=0x00FFFF)
+    await ctx.message.delete()
+    await ctx.send(embed=embed)
+
+    def check(message):
+        return message.author == ctx.author and message.channel == ctx.channel and message.content.lower(
+        ) in ("v", "p")
+
+    message = await ctx.bot.wait_for("message", check=check)
+    choice = message.content.lower()
+    if choice == "v":
+        embed = discord.Embed(title="Verdad",
+                              description=f"{random.choice(truth_items)}",
+                              color=0x00FFFF)
+    await ctx.send(embed=embed)
+
+    if choice == "p":
+        embed = discord.Embed(title="Prueba!",
+                              description=f"{random.choice(dare_items)}",
+                              color=0x00FFFF)
+    await ctx.send(embed=embed)
+#######apiiiiii del tiemmpo###########
+@bot.command()
+async def tiempo(ctx, location):
+    '''sirve para mostrar el tiempo de la ciudad'''
+    mykey = 'a2fad8b8ac4387388969c71bb664d785'  #get your api key from https://openweathermap.org/
+    link = 'https://api.openweathermap.org/data/2.5/weather?q=' + location + '&appid=' + mykey
+    api_link = requests.get(link)
+    api_data = api_link.json()
+
+    #crear variables para almacenar y mostrar datos
+    temp_city = ((api_data['main']['temp']) - 273.15)  #para que sean grados
+    feelslike_temp = ((api_data['main']['feels_like']) - 273.15)
+    weather_desc = api_data['weather'][0]['description']
+    hmdt = api_data['main']['humidity']
+    wind_spd = api_data['wind']['speed']
+    visibility = api_data['visibility']
+    #date_time = datetime.date().strftime("%d %b %Y | %I:%M:%S %p") {round(client.latency * 1000)}
+
+    title = f'⛅ El tiempo para {location}.'
+
+    description = f'🌡️ Temperatura: {round(temp_city * 1)}°C \n \n 🔥 Sensacion Termica: {round(feelslike_temp * 1)}°C \n \n☁️ Tipo: {weather_desc}. \n \n 🥵 Humedad: {hmdt}% \n \n 💨 Velocidad del viento: {wind_spd} km/h \n \n 👀 Visibilidad: {visibility} Metros'
+    embed = discord.Embed(title=title,
+                          description=description,
+                          color=discord.Colour.orange())
+    await ctx.send(embed=embed)
+
+
+########################################
 @bot.command()
 async def atencion(ctx, *, announce=None):
 	if not ctx.guild:
@@ -400,6 +810,171 @@ async def lottery(ctx, ammount, mins, cost = 10):
   else:
     locations = ["las bahamas", "mordor", "madrid", "un sotano oscuro...", "el Palau de la Generalitat", "su puta casa", "tonto quien lo lea", "tu cama", "Vietnam", "el discord personal de tu ex", "Club Penguin", "Habbo Hotel"]
     await ctx.send(f"Mala suerte gente, le ha tocado a un desconocido en {random.choice(locations)}")
+
+
+##############################CARTASSSS####    
+collection = []
+
+# Comando para solicitar una carta aleatoria
+@bot.command(name='carta', help='Agafa una carta de la api')
+async def carta(ctx):
+    # Hacer una petición a la API para obtener una carta aleatoria
+    url = f"https://api.scryfall.com/cards/random"
+    response = requests.get(url)
+    card = json.loads(response.text)
+
+    # Verificar si la carta ya está en la colección de algún otro usuario
+  #opcional nose si lo pondre aun
+    
+
+    # Enviar la carta al usuario
+    await ctx.send(card['name'])#opcional
+    await ctx.send(card['image_uris']['large'])
+
+    # Esperar la reacción del usuario para agregar la carta a su colección
+    def check(reaction, user):
+        return user == ctx.author and str(reaction.emoji) == '💰'
+
+    reaction, user = await bot.wait_for('reaction_add', check=check)
+
+    # Agregar la carta a la colección del usuario
+    collection.append(card)
+    await ctx.send(f"{user.name} ha añadido {card['name']} En su coleccion!")
+
+
+#####FUNCIONAA EL DE ABAIX
+# Comando para ver las cartas de la colección
+@bot.command(name='coleccion', help='Muestra la coleccion de cartas')
+async def mostrar_coleccion(ctx):
+    if not collection:
+      await ctx.send("Tu coleccion esta vacia.")
+      return
+    
+    else: 
+                  
+        message = "Tu coleccion:\n"
+        for card in collection:
+          message += f"- {card['name']}\n"#['name']
+          await ctx.send(card['image_uris']['large'])
+        await ctx.send(message)
+      
+
+# Nuevo comando para intercambiar cartas con otro usuario
+
+
+# Cargar las colecciones guardadas en un archivo JSON al iniciar el bot
+def load_collections():
+    try:
+        with open('collections.json', 'r') as file:
+            collections = json.load(file)
+    except:
+        collections = {}
+    for user_id, user_collection in collections.items():
+        user = bot.get_user(user_id)
+        user.collection = user_collection
+
+# Guardar las colecciones en un archivo JSON al finalizar la ejecución del bot
+def save_collections():
+    collections = {}
+    for user in bot.users:
+        collections[user.id] = user.collection
+    with open('collections.json', 'w') as file:
+        json.dump(collections, file)
+
+# Cargar las colecciones al iniciar el bot
+
+
+
+
+
+#############################3
+#Blackjack
+@bot.command()
+async def blackjack(ctx, bet):
+  channel = ctx.channel
+  if bet == "all":
+    bet = KickCoins(ctx.author)
+  elif bet == "half":
+    bet = int(KickCoins(ctx.author)/2)
+  if KickCoins(ctx.author) < int(bet):
+    await ctx.send("No tens tants KC")
+    return
+  if int(bet) <= 0:
+    await ctx.send("Bon intent maquina")
+    return
+  await ctx.send(f"{ctx.author.mention} ha apostat {bet}KC")
+  deck = deckf()
+  player = "player"
+  dealer = "dealer"
+  stopped = False
+  add_pile(deck, player, draw(deck, 2))
+  add_pile(deck, dealer, draw(deck, 1))
+  await remove_coins(ctx.author, bet)
+
+  if value(deck, player) == 21:
+      await channel.send(f"Les teves cartes son: {pile(deck, player)}")
+      add_pile(deck, dealer, draw(deck, 1))
+      await channel.send(f"Blackjack! Has guanyat {int(int(bet)*1.5)}KC!! (el dealer tenia {pile(deck, dealer)})")
+      await add_coins(ctx.author, int(int(bet)*2.5))
+      return
+  while not stopped:
+    if value(deck, player) == 21:
+      await channel.send(f"Les teves cartes son: { pile(deck, player) }, ({ value(deck, player) })")
+      stopped = True
+    elif value(deck, player) > 21:
+      await channel.send(f"Les teves cartes son: { pile(deck, player) } ({ value(deck, player) })")
+      await channel.send("T'has passat! Git gud noob")
+      add_pile(deck, dealer, draw(deck, 1))
+      await channel.send(f"El dealer tenia {pile(deck, dealer)} ({ value(deck, dealer) })")
+      return
+    else:
+      await channel.send(f"Les teves cartes son: { pile(deck, player) } ({ value(deck, player) })")
+      await channel.send(f"Les cartes del dealer son: { pile(deck, dealer) }, ?  ({ value(deck, dealer) })")
+      await channel.send("Vols una altra carta?")
+      try:
+        msg = await ctx.bot.wait_for("message", timeout=60, check=lambda message: message.author == ctx.author and message.channel == ctx.channel)
+        
+        if msg:
+          if msg.content.lower() == "si":
+            add_pile(deck, player, draw(deck, 1))
+          elif msg.content.lower() == "no":
+            stopped = True
+          else:
+            await channel.send("Posa si o no, brètol")
+      except asyncio.TimeoutError:
+        await channel.send(f"Molt lent {ctx.author.mention}.")
+        return
+  
+  add_pile(deck, dealer, draw(deck, 1))
+  await channel.send(f"Les cartes del dealer son: {pile(deck, dealer)} ({ value(deck, dealer) })")
+  stopped = False
+  if value(deck, dealer) == 21:
+    await channel.send("El dealer té blackjack! Has perdut")
+    return
+  elif value(deck, dealer) < 17:
+    await channel.send("El dealer agafarà cartes fins a arribar a 17")
+    while not stopped:
+      if value(deck, dealer) > 21:
+        await channel.send(f"El dealer s'ha passat! {pile(deck, dealer) } ({value(deck, dealer)})")
+        await channel.send(f"Has guanyat {bet}KC!")
+        await add_coins(ctx.author, int(bet)*2)
+        return
+      elif value(deck, dealer) < 17:
+        add_pile(deck, dealer, draw(deck, 1))
+      else:
+        stopped = True
+
+  await channel.send(f"El dealer té {pile(deck, dealer)} ({value(deck, dealer)})")
+  
+  if value(deck, dealer) < value(deck, player):
+    await channel.send(f"Has guanyat {bet}KC!")
+    await add_coins(ctx.author, int(bet)*2)
+  elif value(deck, dealer) > value(deck, player):
+    await channel.send("Has perdut!")
+  else:
+    await channel.send("Empat :/")
+    await add_coins(ctx.author, int(bet))
+    
 ###########sugerencia#########
 @bot.command()
 async def sugerencia(ctx, *, sugerencia=None):
@@ -627,7 +1202,73 @@ async def comprar(ctx):
     await ctx.channel.send(
         f"{user_name} ha commprado una parte del vecindario!\nNuevo saldo disponible: $" f"{money}"
     )
+@bot.command()
+async def candy(self, ctx):
 
+    """Pilla el caramelo antes que nadie!"""
+
+    embed = discord.Embed(description="🍬 | El primero que la coja se lo queda!", colour=0x0EF7E2)
+    msg = await ctx.send(embed=embed)
+    await msg.add_reaction("🍬")
+
+    def check(reaction, user):
+        return user != self.bot.user and str(reaction.emoji) == '🍬' and reaction.message.id == msg.id
+
+    msg0 = await self.bot.wait_for("reaction_add", check=check)
+
+    embed.description = f"🍬 | {msg0[1].mention} ha ganado y se lo ha comido!"
+
+    await msg.edit(embed=embed)
+
+    with open("candylb.json", "r") as f:
+
+        l = json.load(f)
+
+    try:
+
+        l[str(msg0[1].id)] += 1
+
+    except KeyError:
+
+        l[str(msg0[1].id)] = 1
+
+    with open("candylb.json", "w") as f:
+
+        json.dump(l, f, indent=4)
+
+@bot.command(aliases=["lb", "top"])
+async def candyboard(self, ctx):
+
+    """El ranking de top candelers!"""
+
+    with open("candylb.json", "r") as f:
+
+        l = json.load(f)
+
+    lb = sorted(l, key=lambda x: l[x], reverse=True)
+    print(lb)
+    res = ""
+
+    counter = 0
+
+    for a in lb:
+
+        counter += 1
+
+        if counter > 10:
+
+            pass
+
+        else:
+
+            u = self.bot.get_user(int(a))
+            res += f"\n**{counter}.** `{u}` - **{l[str(a)]} 🍬**"
+
+    embed = discord.Embed(
+            description=res,
+            colour=0x0EF7E2
+        )
+    await ctx.send(embed=embed)
 
 
 

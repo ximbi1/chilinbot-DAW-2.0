@@ -74,8 +74,8 @@ def pile(deck, pile):
     card = card.replace("0", "10")
     card = card.replace("C", "♠")
     card = card.replace("H", "♥")
-    card = card.replace("S", "♣")
-    card = card.replace("D", "♦")
+    card = card.replace("S", "♣️")
+    card = card.replace("D", "♦️")
     returner = returner + card     
   
   return returner
