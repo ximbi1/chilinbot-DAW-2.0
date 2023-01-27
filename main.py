@@ -46,6 +46,7 @@ puntuacion = {}
 #################
 @bot.command(description="para aceder al mooodle")
 async def moodle(ctx):
+    '''para entrar en el moodle '''
     link = ("https://gracia.sallenet.org/")
     await ctx.send("Aquí tienes el enlace para el moodle:\n"+link)         
 
